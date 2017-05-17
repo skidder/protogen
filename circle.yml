@@ -37,4 +37,3 @@ test:
     - cd "$SRC_DIR"  && make test
   post:
     - cd "$SRC_DIR" && make cover
-    - cd "$SRC_DIR" && make coveralls
