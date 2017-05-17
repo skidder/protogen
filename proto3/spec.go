@@ -13,7 +13,7 @@ type FieldType uint8
 type FieldRule uint8
 
 // Rules that can be applied to message fields
-// https://developers.google.com/protocol-buffers/docs/proto#specifying-field-rules
+// https://developers.google.com/protocol-buffers/docs/proto3#specifying-field-rules
 const (
 	NONE FieldRule = iota
 	REQUIRED
@@ -22,7 +22,7 @@ const (
 )
 
 // Built-in field types
-// https://developers.google.com/protocol-buffers/docs/proto#scalar
+// https://developers.google.com/protocol-buffers/docs/proto3#scalar
 const (
 	DOUBLE_TYPE FieldType = iota
 	FLOAT_TYPE
@@ -41,25 +41,22 @@ const (
 	BYTES_TYPE
 )
 
-// Validated describes a type whose values can be validated.
-type Validated interface {
-	Validate() error
-}
-
 // Reserved describes a tag that can be written to a Protobuf.
 type Reserved interface {
+	Validate() error
 	Write() (string, error)
 }
 
 // Field describes a Protobuf message field.
 type Field interface {
+	Validate() error
 	Write() (string, error)
 }
 
 // Spec represents a top-level Protobuf specification.
 type Spec struct {
-	Package  string       // https://developers.google.com/protocol-buffers/docs/proto#packages
-	Imports  []ImportType // https://developers.google.com/protocol-buffers/docs/proto#importing-definitions
+	Package  string       // https://developers.google.com/protocol-buffers/docs/proto3#packages
+	Imports  []ImportType // https://developers.google.com/protocol-buffers/docs/proto3#importing-definitions
 	Messages []Message
 }
 
@@ -73,19 +70,19 @@ type Message struct {
 }
 
 // ReservedName is a field name that is reserved within a message type and cannot be reused.
-// https://developers.google.com/protocol-buffers/docs/proto#reserved
+// https://developers.google.com/protocol-buffers/docs/proto3#reserved
 type ReservedName struct {
 	Name NameType
 }
 
 // ReservedTagValue is a single field tag value that is reserved within a message type and cannot be reused.
-// https://developers.google.com/protocol-buffers/docs/proto#reserved
+// https://developers.google.com/protocol-buffers/docs/proto3#reserved
 type ReservedTagValue struct {
 	Tag TagType
 }
 
 // ReservedTagRange is a range of numeric tag values that are reserved within a message type and cannot be reused.
-// https://developers.google.com/protocol-buffers/docs/proto#reserved
+// https://developers.google.com/protocol-buffers/docs/proto3#reserved
 type ReservedTagRange struct {
 	LowerTag TagType
 	UpperTag TagType
@@ -111,7 +108,7 @@ type ScalarField struct {
 }
 
 // MapField is a message field that maps built-in protobuf type as key-value pairs
-// https://developers.google.com/protocol-buffers/docs/proto#maps
+// https://developers.google.com/protocol-buffers/docs/proto3#maps
 type MapField struct {
 	Name        NameType
 	Tag         TagType
@@ -123,7 +120,7 @@ type MapField struct {
 
 // CustomMapField is a message field that maps between a built-in protobuf type as
 // the key and a custom type as the value.
-// https://developers.google.com/protocol-buffers/docs/proto#maps
+// https://developers.google.com/protocol-buffers/docs/proto3#maps
 type CustomMapField struct {
 	Name        NameType
 	Tag         TagType
@@ -134,7 +131,7 @@ type CustomMapField struct {
 }
 
 // Enum defines an enumeration type of a set of values.
-// https://developers.google.com/protocol-buffers/docs/proto#enum
+// https://developers.google.com/protocol-buffers/docs/proto3#enum
 type Enum struct {
 	Name       NameType
 	Values     []EnumValue
@@ -142,7 +139,7 @@ type Enum struct {
 }
 
 // EnumValue describes a single enumerated value within an enumeration.
-// https://developers.google.com/protocol-buffers/docs/proto#enum
+// https://developers.google.com/protocol-buffers/docs/proto3#enum
 type EnumValue struct {
 	Name    NameType
 	Tag     TagType
@@ -153,6 +150,10 @@ type EnumValue struct {
 
 // Write turns the specification into a string.
 func (s *Spec) Write() (string, error) {
+	if err := s.Validate(); err != nil {
+		return "", err
+	}
+
 	var buffer bytes.Buffer
 	buffer.WriteString("syntax = \"proto3\";\n")
 	if len(s.Package) > 0 {
@@ -173,8 +174,7 @@ func (s *Spec) Write() (string, error) {
 
 // Write the message specification as a string at a given indentation level.
 func (m *Message) Write(level int) (string, error) {
-	err := m.Validate()
-	if err != nil {
+	if err := m.Validate(); err != nil {
 		return "", err
 	}
 
@@ -345,30 +345,126 @@ func (f *FieldType) Write() string {
 
 // VALIDATORS
 
-// Validate the attributes of a message, including all children that can be validated individually.
-func (m *Message) Validate() error {
-	if m.Name == "" {
-		return errors.New("Message name cannot be empty")
+// Validate spec
+func (s *Spec) Validate() error {
+	if len(s.Messages) == 0 {
+		return errors.New("Spec must contain at least one message")
+	}
+	for _, msg := range s.Messages {
+		if err := msg.Validate(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (s *ScalarField) Validate() error {
+// Validate the attributes of a message, including all children that can be validated individually.
+func (m Message) Validate() error {
+	if m.Name == "" {
+		return errors.New("Message name cannot be empty")
+	}
+	for _, v := range m.Fields {
+		if err := v.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, v := range m.Messages {
+		if err := v.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, v := range m.ReservedValues {
+		if err := v.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, v := range m.Enums {
+		if err := v.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Validate field attributes
+func (s ScalarField) Validate() error {
 	if s.Name == "" {
 		return errors.New("Scalar field must have a non-empty name")
 	}
 	return nil
 }
 
-func (m *MapField) Validate() error {
-	if m.Name == "" {
-		return errors.New("Map field must have a non-empty name")
+// Validate field attributes
+func (s ReservedName) Validate() error {
+	if s.Name == "" {
+		return errors.New("ReservedName field must have a non-empty name")
 	}
-	if m.KeyTyping < 1 || m.KeyTyping == DOUBLE_TYPE || m.KeyTyping == FLOAT_TYPE || m.KeyTyping == BYTES_TYPE {
+	return nil
+}
+
+// Validate field attributes
+func (s ReservedTagValue) Validate() error {
+	return nil
+}
+
+// Validate field attributes
+func (s ReservedTagRange) Validate() error {
+	if s.LowerTag < 0 {
+		return errors.New("ReservedTagRange lower-tag must be greater-than-or-equal to zero")
+	}
+	if s.LowerTag >= s.UpperTag {
+		return errors.New("ReservedTagRange upper-tag must be greater-than lower-tag")
+	}
+	return nil
+}
+
+// Validate field attributes
+func (c CustomField) Validate() error {
+	if c.Name == "" {
+		return errors.New("CustomField name must have non-empty name")
+	}
+	if c.Tag < 0 {
+		return errors.New("CustomField must have positive integer for tag")
+	}
+	return nil
+}
+
+// Validate field attributes
+func (c CustomMapField) Validate() error {
+	if c.Name == "" {
+		return errors.New("CustomMapField name must have non-empty name")
+	}
+	if c.KeyTyping < 0 || c.KeyTyping == DOUBLE_TYPE || c.KeyTyping == FLOAT_TYPE || c.KeyTyping == BYTES_TYPE {
+		return fmt.Errorf("Map field %s must use a scalar integral or string type for the map key", c.Name)
+	}
+	if c.Rule == REPEATED {
+		return errors.New("CustomMapField cannot use repeated rule")
+	}
+	return nil
+}
+
+func (m MapField) Validate() error {
+	if m.Name == "" {
+		return errors.New("MapField must have a non-empty name")
+	}
+	if m.KeyTyping < 0 || m.KeyTyping == DOUBLE_TYPE || m.KeyTyping == FLOAT_TYPE || m.KeyTyping == BYTES_TYPE {
 		return fmt.Errorf("Map field %s must use a scalar integral or string type for the map key", m.Name)
 	}
-	if m.ValueTyping < 1 {
+	if m.ValueTyping < 0 {
 		return fmt.Errorf("Map field %s must have a type specified for the map value", m.Name)
+	}
+	if m.Rule == REPEATED {
+		return errors.New("MapField cannot use repeated rule")
+	}
+	return nil
+}
+
+func (e *Enum) Validate() error {
+	if e.Name == "" {
+		return errors.New("Enum must have a non-empty name")
+	}
+	if len(e.Values) == 0 {
+		return errors.New("Enum must have non-empty set of values")
 	}
 	return nil
 }
