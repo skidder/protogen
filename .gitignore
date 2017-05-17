@@ -14,4 +14,4 @@
 .glide/
 
 # Test coverage reports
-.coverage/
+coverage/
