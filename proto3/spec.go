@@ -10,9 +10,21 @@ type ImportType string
 type NameType string
 type TagType uint8
 type FieldType uint8
+type FieldRule uint8
 
+// Rules that can be applied to message fields
+// https://developers.google.com/protocol-buffers/docs/proto#specifying-field-rules
 const (
-	DOUBLE_TYPE FieldType = iota + 1
+	NONE FieldRule = iota
+	REQUIRED
+	OPTIONAL
+	REPEATED
+)
+
+// Built-in field types
+// https://developers.google.com/protocol-buffers/docs/proto#scalar
+const (
+	DOUBLE_TYPE FieldType = iota
 	FLOAT_TYPE
 	INT32_TYPE
 	INT64_TYPE
@@ -29,24 +41,29 @@ const (
 	BYTES_TYPE
 )
 
+// Validated describes a type whose values can be validated.
 type Validated interface {
 	Validate() error
 }
 
+// Reserved describes a tag that can be written to a Protobuf.
 type Reserved interface {
 	Write() (string, error)
 }
 
+// Field describes a Protobuf message field.
 type Field interface {
 	Write() (string, error)
 }
 
+// Spec represents a top-level Protobuf specification.
 type Spec struct {
-	Package  string
-	Imports  []ImportType
+	Package  string       // https://developers.google.com/protocol-buffers/docs/proto#packages
+	Imports  []ImportType // https://developers.google.com/protocol-buffers/docs/proto#importing-definitions
 	Messages []Message
 }
 
+// Message is a single Protobuf message definition.
 type Message struct {
 	Name           string
 	Messages       []Message
@@ -55,57 +72,77 @@ type Message struct {
 	Enums          []Enum
 }
 
+// ReservedName is a field name that is reserved within a message type and cannot be reused.
+// https://developers.google.com/protocol-buffers/docs/proto#reserved
 type ReservedName struct {
 	Name NameType
 }
 
+// ReservedTagValue is a single field tag value that is reserved within a message type and cannot be reused.
+// https://developers.google.com/protocol-buffers/docs/proto#reserved
 type ReservedTagValue struct {
 	Tag TagType
 }
 
+// ReservedTagRange is a range of numeric tag values that are reserved within a message type and cannot be reused.
+// https://developers.google.com/protocol-buffers/docs/proto#reserved
 type ReservedTagRange struct {
 	LowerTag TagType
 	UpperTag TagType
 }
 
+// CustomField is a message field with an unchecked, custom type. This can be used to define fields that
+// use imported types.
 type CustomField struct {
-	Name     NameType
-	Tag      TagType
-	Repeated bool
-	Comment  string
-	Typing   string
+	Name    NameType
+	Tag     TagType
+	Rule    FieldRule
+	Comment string
+	Typing  string
 }
 
+// ScalarField is a message field that uses a built-in protobuf type.
 type ScalarField struct {
-	Name     NameType
-	Tag      TagType
-	Repeated bool
-	Comment  string
-	Typing   FieldType
+	Name    NameType
+	Tag     TagType
+	Rule    FieldRule
+	Comment string
+	Typing  FieldType
 }
 
+// MapField is a message field that maps built-in protobuf type as key-value pairs
+// https://developers.google.com/protocol-buffers/docs/proto#maps
 type MapField struct {
 	Name        NameType
 	Tag         TagType
+	Rule        FieldRule
 	Comment     string
 	KeyTyping   FieldType
 	ValueTyping FieldType
 }
 
+// CustomMapField is a message field that maps between a built-in protobuf type as
+// the key and a custom type as the value.
+// https://developers.google.com/protocol-buffers/docs/proto#maps
 type CustomMapField struct {
 	Name        NameType
 	Tag         TagType
+	Rule        FieldRule
 	Comment     string
 	KeyTyping   FieldType
 	ValueTyping string
 }
 
+// Enum defines an enumeration type of a set of values.
+// https://developers.google.com/protocol-buffers/docs/proto#enum
 type Enum struct {
 	Name       NameType
 	Values     []EnumValue
 	AllowAlias bool
 }
 
+// EnumValue describes a single enumerated value within an enumeration.
+// https://developers.google.com/protocol-buffers/docs/proto#enum
 type EnumValue struct {
 	Name    NameType
 	Tag     TagType
@@ -114,25 +151,27 @@ type EnumValue struct {
 
 // WRITERS
 
-func (s *Spec) Write(level int) (string, error) {
+// Write turns the specification into a string.
+func (s *Spec) Write() (string, error) {
 	var buffer bytes.Buffer
 	buffer.WriteString("syntax = \"proto3\";\n")
-	if s.Package != "" {
+	if len(s.Package) > 0 {
 		buffer.WriteString(fmt.Sprintf("package %s;\n", s.Package))
 	}
 	for _, importPackage := range s.Imports {
 		buffer.WriteString(fmt.Sprintf("import \"%s\";\n", importPackage))
 	}
 	for _, msg := range s.Messages {
-		msgSpec, err := msg.Write(level)
+		msgSpec, err := msg.Write(0) // write message at level zero (0)
 		if err != nil {
 			return "", err
 		}
-		buffer.WriteString(fmt.Sprintf("%s\n", msgSpec))
+		buffer.WriteString(fmt.Sprintf("\n%s\n", msgSpec))
 	}
 	return buffer.String(), nil
 }
 
+// Write the message specification as a string at a given indentation level.
 func (m *Message) Write(level int) (string, error) {
 	err := m.Validate()
 	if err != nil {
@@ -152,9 +191,6 @@ func (m *Message) Write(level int) (string, error) {
 	}
 
 	// ENUMS
-	if len(m.Enums) > 0 {
-		buffer.WriteString("\n")
-	}
 	for _, v := range m.Enums {
 		v, err := v.Write(level + 1)
 		if err != nil {
@@ -164,9 +200,6 @@ func (m *Message) Write(level int) (string, error) {
 	}
 
 	// RESERVED TAGS
-	if len(m.ReservedValues) > 0 {
-		buffer.WriteString("\n")
-	}
 	for _, reservedValue := range m.ReservedValues {
 		v, err := reservedValue.Write()
 		if err != nil {
@@ -176,9 +209,6 @@ func (m *Message) Write(level int) (string, error) {
 	}
 
 	// FIELDS
-	if len(m.Fields) > 0 {
-		buffer.WriteString("\n")
-	}
 	for _, v := range m.Fields {
 		v, err := v.Write()
 		if err != nil {
@@ -191,76 +221,58 @@ func (m *Message) Write(level int) (string, error) {
 	return buffer.String(), nil
 }
 
+// Write a ReservedName as a string
 func (r ReservedName) Write() (string, error) {
 	return fmt.Sprintf("\"%s\"", r.Name), nil
 }
 
+// Write a ReservedTagValue as a string
 func (r ReservedTagValue) Write() (string, error) {
 	return fmt.Sprintf("%d", r.Tag), nil
 }
 
+// Write a ReservedTagRange as a string
 func (r ReservedTagRange) Write() (string, error) {
 	return fmt.Sprintf("%d to %d", r.LowerTag, r.UpperTag), nil
 }
 
+// Write a CustomField as a string
 func (c CustomField) Write() (string, error) {
-	v := fmt.Sprintf("%s %s = %d;", c.Typing, c.Name, c.Tag)
-
-	if c.Repeated {
-		v = fmt.Sprintf("repeated %s", v)
-	}
+	v := fmt.Sprintf("%s%s %s = %d;", c.Rule.Write(), c.Typing, c.Name, c.Tag)
 	if c.Comment != "" {
 		v = fmt.Sprintf("%s   // %s", v, c.Comment)
 	}
 	return v, nil
 }
 
+// Write a ScalarField as a string
 func (s ScalarField) Write() (string, error) {
-	typeString, err := toProtobufType(s.Typing)
-	if err != nil {
-		return "", err
-	}
-
-	v := fmt.Sprintf("%s %s = %d;", typeString, s.Name, s.Tag)
-	if s.Repeated {
-		v = fmt.Sprintf("repeated %s", v)
-	}
+	v := fmt.Sprintf("%s%s %s = %d;", s.Rule.Write(), s.Typing.Write(), s.Name, s.Tag)
 	if s.Comment != "" {
 		v = fmt.Sprintf("%s   // %s", v, s.Comment)
 	}
 	return v, nil
 }
 
+// Write a MapField as a string
 func (m MapField) Write() (string, error) {
-	var keyTypeString, valueTypeString string
-	var err error
-	keyTypeString, err = toProtobufType(m.KeyTyping)
-	if err != nil {
-		return "", err
-	}
-	valueTypeString, err = toProtobufType(m.ValueTyping)
-	if err != nil {
-		return "", err
-	}
-	v := fmt.Sprintf("map<%s, %s> %s = %d;", keyTypeString, valueTypeString, m.Name, m.Tag)
+	v := fmt.Sprintf("%smap<%s, %s> %s = %d;", m.Rule.Write(), m.KeyTyping.Write(), m.ValueTyping.Write(), m.Name, m.Tag)
 	if m.Comment != "" {
 		v = fmt.Sprintf("%s   // %s", v, m.Comment)
 	}
 	return v, nil
 }
 
+// Write a CustomMapField as a string
 func (c CustomMapField) Write() (string, error) {
-	keyTypeString, err := toProtobufType(c.KeyTyping)
-	if err != nil {
-		return "", err
-	}
-	v := fmt.Sprintf("map<%s, %s> %s = %d;", keyTypeString, c.ValueTyping, c.Name, c.Tag)
+	v := fmt.Sprintf("%smap<%s, %s> %s = %d;", c.Rule.Write(), c.KeyTyping.Write(), c.ValueTyping, c.Name, c.Tag)
 	if c.Comment != "" {
 		v = fmt.Sprintf("%s   // %s", v, c.Comment)
 	}
 	return v, nil
 }
 
+// Write a CustomMapField as a string
 func (e Enum) Write(level int) (string, error) {
 	v := fmt.Sprintf("%senum %s {\n", indentLevel(level), e.Name)
 	if e.AllowAlias {
@@ -277,8 +289,63 @@ func (e Enum) Write(level int) (string, error) {
 	return v, nil
 }
 
+// Write a FieldRule as a string
+func (f *FieldRule) Write() string {
+	switch *f {
+	case NONE:
+		return ""
+	case REQUIRED:
+		return "required "
+	case OPTIONAL:
+		return "optional "
+	case REPEATED:
+		return "repeated "
+	default:
+		return ""
+	}
+}
+
+// Write a FieldType as a string
+func (f *FieldType) Write() string {
+	switch *f {
+	case DOUBLE_TYPE:
+		return "double"
+	case FLOAT_TYPE:
+		return "float"
+	case INT32_TYPE:
+		return "int32"
+	case INT64_TYPE:
+		return "int64"
+	case UINT32_TYPE:
+		return "uint32"
+	case UINT64_TYPE:
+		return "uint64"
+	case SINT32_TYPE:
+		return "sint32"
+	case SINT64_TYPE:
+		return "sint64"
+	case FIXED32_TYPE:
+		return "fixed32"
+	case FIXED64_TYPE:
+		return "fixed64"
+	case SFIXED32_TYPE:
+		return "sfixed32"
+	case SFIXED64_TYPE:
+		return "sfixed64"
+	case BOOL_TYPE:
+		return "bool"
+	case STRING_TYPE:
+		return "string"
+	case BYTES_TYPE:
+		return "bytes"
+	default:
+		return ""
+	}
+}
+
 // VALIDATORS
 
+// Validate the attributes of a message, including all children that can be validated individually.
 func (m *Message) Validate() error {
 	if m.Name == "" {
 		return errors.New("Message name cannot be empty")
@@ -314,41 +381,4 @@ func indentLevel(level int) string {
 		buffer.WriteString("  ")
 	}
 	return buffer.String()
-}
-
-func toProtobufType(t FieldType) (string, error) {
-	switch t {
-	case DOUBLE_TYPE:
-		return "double", nil
-	case FLOAT_TYPE:
-		return "float", nil
-	case INT32_TYPE:
-		return "int32", nil
-	case INT64_TYPE:
-		return "int64", nil
-	case UINT32_TYPE:
-		return "uint32", nil
-	case UINT64_TYPE:
-		return "uint64", nil
-	case SINT32_TYPE:
-		return "sint32", nil
-	case SINT64_TYPE:
-		return "sint64", nil
-	case FIXED32_TYPE:
-		return "fixed32", nil
-	case FIXED64_TYPE:
-		return "fixed64", nil
-	case SFIXED32_TYPE:
-		return "sfixed32", nil
-	case SFIXED64_TYPE:
-		return "sfixed64", nil
-	case BOOL_TYPE:
-		return "bool", nil
-	case STRING_TYPE:
-		return "string", nil
-	case BYTES_TYPE:
-		return "bytes", nil
-	default:
-		return "", fmt.Errorf("Unrecognized protobuf field type: %d", t)
-	}
 }

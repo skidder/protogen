@@ -67,7 +67,7 @@ func TestToProtobufSpec(t *testing.T) {
 										proto3.ReservedTagRange{LowerTag: 6, UpperTag: 9},
 									},
 									Fields: []proto3.Field{
-										proto3.CustomField{Name: "Habitat", Typing: "string", Tag: 10, Comment: "What am I?"},
+										proto3.CustomField{Name: "Habitat", Typing: "string", Tag: 10, Rule: proto3.REPEATED, Comment: "What am I?"},
 										proto3.ScalarField{Name: "Continent", Typing: proto3.STRING_TYPE, Tag: 11, Comment: "Where am I?"},
 										proto3.MapField{Name: "LanguageMap", KeyTyping: proto3.STRING_TYPE, ValueTyping: proto3.STRING_TYPE, Tag: 12, Comment: "Super essential"},
 									},
@@ -80,8 +80,8 @@ func TestToProtobufSpec(t *testing.T) {
 								proto3.ReservedTagRange{LowerTag: 6, UpperTag: 9},
 							},
 							Fields: []proto3.Field{
-								proto3.CustomField{Name: "Habitat", Typing: "string", Tag: 20, Comment: "What am I?"},
-								proto3.ScalarField{Name: "Continent", Typing: proto3.STRING_TYPE, Tag: 21, Comment: "Where am I?"},
+								proto3.CustomField{Name: "Habitat", Typing: "string", Tag: 20, Rule: proto3.REQUIRED, Comment: "What am I?"},
+								proto3.ScalarField{Name: "Continent", Typing: proto3.STRING_TYPE, Tag: 21, Rule: proto3.OPTIONAL, Comment: "Where am I?"},
 								proto3.MapField{Name: "LanguageMap", KeyTyping: proto3.STRING_TYPE, ValueTyping: proto3.STRING_TYPE, Tag: 22, Comment: "Super essential"},
 								proto3.CustomMapField{Name: "CustomMap", KeyTyping: proto3.STRING_TYPE, ValueTyping: "Event", Tag: 23},
 							},
@@ -114,10 +114,11 @@ func TestToProtobufSpec(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		_, err := ToProtobufSpec(tt.args.spec)
+		s, err := ToProtobufSpec(tt.args.spec)
 		if (err != nil) != tt.wantErr {
 			t.Errorf("%q. ToProtobufSpec() error = %v, wantErr %v", tt.name, err, tt.wantErr)
 			continue
 		}
+		t.Logf("Spec:\n%s\n\n", s)
 	}
 }
