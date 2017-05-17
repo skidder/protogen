@@ -13,13 +13,11 @@ func TestToProtobufSpec(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    string
 		wantErr bool
 	}{
 		{
 			name:    "Nil Spec",
 			args:    args{nil},
-			want:    "",
 			wantErr: true,
 		},
 		{
@@ -29,7 +27,6 @@ func TestToProtobufSpec(t *testing.T) {
 					Package: "foo",
 				},
 			},
-			want:    "syntax = \"proto3\";\npackage foo;\n",
 			wantErr: false,
 		},
 		{
@@ -40,7 +37,6 @@ func TestToProtobufSpec(t *testing.T) {
 					Imports: []proto3.ImportType{"package1"},
 				},
 			},
-			want:    "syntax = \"proto3\";\npackage foo;\nimport \"package1\";\n",
 			wantErr: false,
 		},
 		{
@@ -51,7 +47,6 @@ func TestToProtobufSpec(t *testing.T) {
 					Imports: []proto3.ImportType{"package1", "package2"},
 				},
 			},
-			want:    "syntax = \"proto3\";\npackage foo;\nimport \"package1\";\nimport \"package2\";\n",
 			wantErr: false,
 		},
 		{
@@ -115,18 +110,14 @@ func TestToProtobufSpec(t *testing.T) {
 					},
 				},
 			},
-			want:    "syntax = \"proto3\";\npackage foo;\nimport \"package1\";\nimport \"package2\";\n",
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
-		got, err := ToProtobufSpec(tt.args.spec)
+		_, err := ToProtobufSpec(tt.args.spec)
 		if (err != nil) != tt.wantErr {
 			t.Errorf("%q. ToProtobufSpec() error = %v, wantErr %v", tt.name, err, tt.wantErr)
 			continue
-		}
-		if got != tt.want {
-			t.Errorf("%q. ToProtobufSpec() = %v, want %v", tt.name, got, tt.want)
 		}
 	}
 }
